@@ -76,9 +76,16 @@ export class App {
 
   /**
    * Setup the event-driven pipeline connecting all modules
-   * Flow: Market Data → Strategy Engine → Notification Service
+   * Flow: Market Data → Strategy Engine → Notification/Execution
    */
   private setupEventPipeline(): void {
+    this.setupDataFlowEvents();
+    this.setupErrorHandlers();
+    this.setupConnectionEvents();
+    this.setupModuleEvents();
+  }
+
+  private setupDataFlowEvents(): void {
     // Market Data Consumer → Strategy Engine
     this.marketDataConsumer.on('candleClosed', (event) => {
       this.strategyEngine.processCandle(event);
@@ -86,14 +93,14 @@ export class App {
 
     // Strategy Engine → Notification Service + Execution Engine (parallel)
     this.strategyEngine.on('signalDetected', async (signal) => {
-      // Execute notification and order in parallel
       await Promise.all([
         this.notificationService.processSignal(signal),
         this.executionEngine.processSignal(signal),
       ]);
     });
+  }
 
-    // Error handling
+  private setupErrorHandlers(): void {
     this.marketDataConsumer.on('error', (error) => {
       logger.error('Market Data Consumer error', { error: error.message });
       this.handleFatalError('MarketDataConsumer', error.message);
@@ -110,8 +117,9 @@ export class App {
     this.executionEngine.on('error', (error) => {
       logger.error('Execution Engine error', { error: error.message });
     });
+  }
 
-    // Connection status logging
+  private setupConnectionEvents(): void {
     this.marketDataConsumer.on('connected', () => {
       logger.info('WebSocket connected to Binance');
     });
@@ -123,7 +131,9 @@ export class App {
     this.marketDataConsumer.on('reconnecting', () => {
       logger.info('WebSocket reconnecting to Binance...');
     });
+  }
 
+  private setupModuleEvents(): void {
     // Notification events
     this.notificationService.on('sent', (signal) => {
       logger.info('Notification sent successfully', {
