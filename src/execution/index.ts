@@ -22,8 +22,8 @@ export type {
   ExecutionEvents,
 } from './types.js';
 
-// Classes will be exported here after implementation
+// Classes
+export { BinanceOrderClient } from './BinanceOrderClient.js';
 // export { ExecutionEngine } from './ExecutionEngine.js';
-// export { BinanceOrderClient } from './BinanceOrderClient.js';
 // export { PositionSizer } from './PositionSizer.js';
 // export { OrderValidator } from './OrderValidator.js';
