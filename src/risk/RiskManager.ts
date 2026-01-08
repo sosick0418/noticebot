@@ -19,6 +19,12 @@ import type {
 } from './types.js';
 
 export class RiskManager extends EventEmitter<RiskManagerEvents> {
+  /** Threshold for PnL change to trigger status update (in USDT) */
+  private static readonly PNL_CHANGE_THRESHOLD_USDT = 0.01;
+
+  /** Threshold for drawdown change to trigger status update */
+  private static readonly DRAWDOWN_CHANGE_THRESHOLD = 0.001;
+
   private readonly config: RiskManagerConfig;
   private readonly client: BinanceOrderClient;
   private checkTimer: NodeJS.Timeout | null = null;
@@ -76,7 +82,7 @@ export class RiskManager extends EventEmitter<RiskManagerEvents> {
         peakBalance: this.peakBalance,
       });
     } catch (error) {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      const normalizedError = this.normalizeError(error);
       logger.error('Failed to get initial balance', { error: normalizedError.message });
       this.emit('error', normalizedError);
       return;
@@ -211,7 +217,7 @@ export class RiskManager extends EventEmitter<RiskManagerEvents> {
         this.emit('statusChanged', status);
       }
     } catch (error) {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      const normalizedError = this.normalizeError(error);
       logger.error('Risk check failed', { error: normalizedError.message });
       this.emit('error', normalizedError);
     }
@@ -293,8 +299,9 @@ export class RiskManager extends EventEmitter<RiskManagerEvents> {
 
       // Get current position
       const position = await this.client.getPosition(this.config.symbol);
+      const hasOpenPosition = position.side !== 'NONE' && position.size > 0;
 
-      if (position.side !== 'NONE' && position.size > 0) {
+      if (hasOpenPosition) {
         // Close position with market order
         const closeSide = position.side === 'LONG' ? 'SELL' : 'BUY';
 
@@ -321,7 +328,7 @@ export class RiskManager extends EventEmitter<RiskManagerEvents> {
         });
       }
     } catch (error) {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      const normalizedError = this.normalizeError(error);
       logger.error('Failed to close positions', { error: normalizedError.message });
       this.emit('error', normalizedError);
     }
@@ -374,6 +381,13 @@ export class RiskManager extends EventEmitter<RiskManagerEvents> {
   }
 
   /**
+   * Normalize various error types to Error object
+   */
+  private normalizeError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+
+  /**
    * Check if status has meaningfully changed
    */
   private hasStatusChanged(newStatus: RiskStatus): boolean {
@@ -383,8 +397,8 @@ export class RiskManager extends EventEmitter<RiskManagerEvents> {
       this.currentStatus.isDailyLimitBreached !== newStatus.isDailyLimitBreached ||
       this.currentStatus.isDrawdownBreached !== newStatus.isDrawdownBreached ||
       this.currentStatus.isTradingAllowed !== newStatus.isTradingAllowed ||
-      Math.abs(this.currentStatus.dailyPnl - newStatus.dailyPnl) > 0.01 ||
-      Math.abs(this.currentStatus.currentDrawdown - newStatus.currentDrawdown) > 0.001
+      Math.abs(this.currentStatus.dailyPnl - newStatus.dailyPnl) > RiskManager.PNL_CHANGE_THRESHOLD_USDT ||
+      Math.abs(this.currentStatus.currentDrawdown - newStatus.currentDrawdown) > RiskManager.DRAWDOWN_CHANGE_THRESHOLD
     );
   }
 
