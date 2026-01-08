@@ -76,22 +76,6 @@ export interface AccountSummary {
 }
 
 /**
- * Position history entry
- */
-export interface PositionHistoryEntry {
-  symbol: string;
-  side: 'LONG' | 'SHORT';
-  entryPrice: number;
-  exitPrice: number;
-  size: number;
-  realizedPnl: number;
-  roe: number;
-  openTime: number;
-  closeTime: number;
-  duration: number;
-}
-
-/**
  * Position Manager events
  */
 export type PositionManagerEvents = {

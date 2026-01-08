@@ -17,6 +17,12 @@ import type {
 } from './types.js';
 
 export class PositionManager extends EventEmitter<PositionManagerEvents> {
+  /** Default maintenance margin rate for BTC (0.4%) */
+  private static readonly DEFAULT_MAINTENANCE_MARGIN_RATE = 0.004;
+
+  /** Minimum change threshold in USDT to trigger update events */
+  private static readonly CHANGE_THRESHOLD_USDT = 0.01;
+
   private readonly config: PositionManagerConfig;
   private readonly client: BinanceOrderClient;
   private pollTimer: NodeJS.Timeout | null = null;
@@ -143,10 +149,9 @@ export class PositionManager extends EventEmitter<PositionManagerEvents> {
     // Estimate liquidation price (simplified calculation)
     // For longs: entry * (1 - 1/leverage + maintenance margin rate)
     // For shorts: entry * (1 + 1/leverage - maintenance margin rate)
-    const maintenanceMarginRate = 0.004; // 0.4% typical for BTC
     const liquidationPrice = isLong
-      ? position.entryPrice * (1 - 1 / position.leverage + maintenanceMarginRate)
-      : position.entryPrice * (1 + 1 / position.leverage - maintenanceMarginRate);
+      ? position.entryPrice * (1 - 1 / position.leverage + PositionManager.DEFAULT_MAINTENANCE_MARGIN_RATE)
+      : position.entryPrice * (1 + 1 / position.leverage - PositionManager.DEFAULT_MAINTENANCE_MARGIN_RATE);
 
     return {
       ...position,
@@ -204,7 +209,7 @@ export class PositionManager extends EventEmitter<PositionManagerEvents> {
       const hasChanged =
         previous.size !== newPosition.size ||
         previous.side !== newPosition.side ||
-        Math.abs(previous.unrealizedPnl - newPosition.unrealizedPnl) > 0.01;
+        Math.abs(previous.unrealizedPnl - newPosition.unrealizedPnl) > PositionManager.CHANGE_THRESHOLD_USDT;
 
       return {
         previous,
@@ -222,8 +227,8 @@ export class PositionManager extends EventEmitter<PositionManagerEvents> {
   private hasAccountChanged(newAccount: AccountSummary): boolean {
     if (!this.currentAccount) return true;
 
-    const balanceChanged = Math.abs(this.currentAccount.totalBalance - newAccount.totalBalance) > 0.01;
-    const pnlChanged = Math.abs(this.currentAccount.totalUnrealizedPnl - newAccount.totalUnrealizedPnl) > 0.01;
+    const balanceChanged = Math.abs(this.currentAccount.totalBalance - newAccount.totalBalance) > PositionManager.CHANGE_THRESHOLD_USDT;
+    const pnlChanged = Math.abs(this.currentAccount.totalUnrealizedPnl - newAccount.totalUnrealizedPnl) > PositionManager.CHANGE_THRESHOLD_USDT;
 
     return balanceChanged || pnlChanged;
   }

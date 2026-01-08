@@ -10,7 +10,6 @@ export type {
   ExtendedPosition,
   AccountSummary,
   PositionChange,
-  PositionHistoryEntry,
   PositionManagerEvents,
 } from './types.js';
 
