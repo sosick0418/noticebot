@@ -23,8 +23,13 @@ export interface CandleData {
  * Event emitted when a candle is confirmed (x = true)
  */
 export interface CandleClosedEvent {
-  closePrice: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
   closeTime: number;
+  /** @deprecated Use close instead */
+  closePrice: number;
 }
 
 // ===========================================

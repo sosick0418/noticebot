@@ -228,26 +228,29 @@ export class App {
   }
 
   private setupDashboardEvents(): void {
-    // Forward candle data to dashboard
+    // Forward candle data to dashboard on every candle close
     this.marketDataConsumer.on('candleClosed', (event) => {
       this.dashboard.updateCandle({
         time: event.closeTime,
-        open: event.closePrice, // We only have close price from this event
-        high: event.closePrice,
-        low: event.closePrice,
-        close: event.closePrice,
+        open: event.open,
+        high: event.high,
+        low: event.low,
+        close: event.close,
       });
     });
 
-    // Forward Bollinger Bands data to dashboard
-    this.strategyEngine.on('signalDetected', (signal) => {
+    // Forward Bollinger Bands data to dashboard when calculated
+    this.strategyEngine.on('bollingerCalculated', (event) => {
       this.dashboard.updateBollingerBands({
-        time: signal.timestamp,
-        upper: signal.type === 'SHORT' ? signal.bandValue : signal.middleBand + (signal.middleBand - signal.bandValue),
-        middle: signal.middleBand,
-        lower: signal.type === 'LONG' ? signal.bandValue : signal.middleBand - (signal.middleBand - signal.bandValue),
+        time: event.candle.time,
+        upper: event.bands.upper,
+        middle: event.bands.middle,
+        lower: event.bands.lower,
       });
+    });
 
+    // Forward signal data to dashboard
+    this.strategyEngine.on('signalDetected', (signal) => {
       this.dashboard.addSignal({
         type: signal.type,
         symbol: signal.symbol,

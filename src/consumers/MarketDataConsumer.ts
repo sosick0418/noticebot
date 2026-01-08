@@ -182,8 +182,12 @@ export class MarketDataConsumer extends EventEmitter<MarketDataEventTypes> {
       });
 
       const event: CandleClosedEvent = {
-        closePrice: candle.close,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
         closeTime: candle.closeTime,
+        closePrice: candle.close, // deprecated, kept for compatibility
       };
 
       this.emit('candleClosed', event);

@@ -24,8 +24,20 @@ import {
   isSqueezeActive,
 } from './indicators.js';
 
+export interface BollingerCalculatedEvent {
+  candle: {
+    time: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+  };
+  bands: BollingerBandsResult;
+}
+
 interface StrategyEventTypes {
   signalDetected: [TradingSignal];
+  bollingerCalculated: [BollingerCalculatedEvent];
   error: [Error];
 }
 
@@ -51,7 +63,8 @@ export class StrategyEngine extends EventEmitter<StrategyEventTypes> {
    * This is the main entry point from Market Data Consumer
    */
   public processCandle(event: CandleClosedEvent): void {
-    const { closePrice, closeTime } = event;
+    const { open, high, low, close, closeTime, closePrice } = event;
+    const price = close || closePrice; // Use close, fallback to closePrice for compatibility
 
     // Guard: Skip duplicate events
     if (closeTime === this.lastProcessedTimestamp) {
@@ -62,7 +75,7 @@ export class StrategyEngine extends EventEmitter<StrategyEventTypes> {
     this.lastProcessedTimestamp = closeTime;
 
     // Update price buffer (FIFO)
-    this.updatePriceBuffer(closePrice);
+    this.updatePriceBuffer(price);
 
     // Guard: Need enough data for indicator calculation
     if (this.closePrices.length < this.config.bollingerPeriod) {
@@ -80,12 +93,24 @@ export class StrategyEngine extends EventEmitter<StrategyEventTypes> {
       return;
     }
 
+    // Emit bollingerCalculated event for dashboard
+    this.emit('bollingerCalculated', {
+      candle: {
+        time: closeTime,
+        open: open || price,
+        high: high || price,
+        low: low || price,
+        close: price,
+      },
+      bands,
+    });
+
     // Evaluate signal conditions
-    const evaluation = this.evaluateSignal(closePrice, bands);
+    const evaluation = this.evaluateSignal(price, bands);
 
     // Log current state
     logger.debug('Strategy evaluation', {
-      closePrice,
+      closePrice: price,
       upper: bands.upper.toFixed(2),
       middle: bands.middle.toFixed(2),
       lower: bands.lower.toFixed(2),
@@ -98,7 +123,7 @@ export class StrategyEngine extends EventEmitter<StrategyEventTypes> {
       const signal: TradingSignal = {
         type: evaluation.type,
         symbol: this.config.symbol,
-        closePrice,
+        closePrice: price,
         bandValue: evaluation.bandValue,
         middleBand: bands.middle,
         bandwidth: bands.bandwidth,

@@ -48,7 +48,7 @@ export class BinanceOrderClient {
    */
   async verifyConnection(): Promise<boolean> {
     try {
-      await this.client.getAccountInformation();
+      await this.client.getAccountInformationV3();
       logger.info('Binance API connection verified');
       return true;
     } catch (error) {
