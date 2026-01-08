@@ -138,7 +138,8 @@ export class ExecutionEngine extends EventEmitter<ExecutionEvents> {
       }
 
       // Step 4: Execute entry order
-      const entrySide = signal.type === 'LONG' ? 'BUY' : 'SELL';
+      const isLong = signal.type === 'LONG';
+      const entrySide = isLong ? 'BUY' : 'SELL';
       const entryOrder = await this.executeWithRetry(async () => {
         return this.client.submitMarketOrder({
           symbol: signal.symbol,
@@ -203,19 +204,13 @@ export class ExecutionEngine extends EventEmitter<ExecutionEvents> {
 
       this.emit('orderExecuted', result);
     } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
       logger.error('Execution Engine error', {
         executionId,
-        error: error instanceof Error ? error.message : String(error),
+        error: normalizedError.message,
       });
-      this.emit(
-        'orderFailed',
-        signal,
-        error instanceof Error ? error.message : String(error)
-      );
-      this.emit(
-        'error',
-        error instanceof Error ? error : new Error(String(error))
-      );
+      this.emit('orderFailed', signal, normalizedError.message);
+      this.emit('error', normalizedError);
     }
   }
 
