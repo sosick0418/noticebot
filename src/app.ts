@@ -13,6 +13,7 @@ import { MarketDataConsumer } from './consumers/index.js';
 import { StrategyEngine } from './strategy/index.js';
 import { NotificationService } from './notification/index.js';
 import { ExecutionEngine, BinanceOrderClient } from './execution/index.js';
+import { DashboardServer } from './dashboard/index.js';
 import type { KlineInterval } from './consumers/types.js';
 
 export class App {
@@ -20,6 +21,7 @@ export class App {
   private strategyEngine: StrategyEngine;
   private notificationService: NotificationService;
   private executionEngine: ExecutionEngine;
+  private dashboard: DashboardServer;
   private isRunning = false;
 
   constructor() {
@@ -71,6 +73,13 @@ export class App {
       binanceClient
     );
 
+    // Initialize Dashboard Server
+    this.dashboard = new DashboardServer({
+      enabled: config.dashboard.enabled,
+      port: config.dashboard.port,
+      host: config.dashboard.host,
+    });
+
     this.setupEventPipeline();
   }
 
@@ -83,6 +92,7 @@ export class App {
     this.setupErrorHandlers();
     this.setupConnectionEvents();
     this.setupModuleEvents();
+    this.setupDashboardEvents();
   }
 
   private setupDataFlowEvents(): void {
@@ -173,6 +183,62 @@ export class App {
     });
   }
 
+  private setupDashboardEvents(): void {
+    // Forward candle data to dashboard
+    this.marketDataConsumer.on('candleClosed', (event) => {
+      this.dashboard.updateCandle({
+        time: event.closeTime,
+        open: event.closePrice, // We only have close price from this event
+        high: event.closePrice,
+        low: event.closePrice,
+        close: event.closePrice,
+      });
+    });
+
+    // Forward Bollinger Bands data to dashboard
+    this.strategyEngine.on('signalDetected', (signal) => {
+      this.dashboard.updateBollingerBands({
+        time: signal.timestamp,
+        upper: signal.type === 'SHORT' ? signal.bandValue : signal.middleBand + (signal.middleBand - signal.bandValue),
+        middle: signal.middleBand,
+        lower: signal.type === 'LONG' ? signal.bandValue : signal.middleBand - (signal.middleBand - signal.bandValue),
+      });
+
+      this.dashboard.addSignal({
+        type: signal.type,
+        symbol: signal.symbol,
+        price: signal.closePrice,
+        timestamp: signal.timestamp,
+        executed: config.execution.enabled,
+      });
+    });
+
+    // Forward connection status to dashboard
+    this.marketDataConsumer.on('connected', () => {
+      this.dashboard.updateStatus({ isConnected: true });
+    });
+
+    this.marketDataConsumer.on('disconnected', () => {
+      this.dashboard.updateStatus({ isConnected: false });
+    });
+
+    // Forward execution events to dashboard
+    this.executionEngine.on('orderExecuted', (result) => {
+      if (result.entryOrder.avgPrice) {
+        this.dashboard.updatePosition({
+          symbol: result.signal.symbol,
+          side: result.signal.type,
+          size: result.entryOrder.executedQty || 0,
+          entryPrice: result.entryOrder.avgPrice,
+          markPrice: result.entryOrder.avgPrice,
+          unrealizedPnl: 0,
+          unrealizedPnlPercent: 0,
+          leverage: config.execution.leverage,
+        });
+      }
+    });
+  }
+
   /**
    * Start the application
    */
@@ -182,6 +248,15 @@ export class App {
       interval: config.trading.interval,
       testnet: config.binance.testnet,
       executionEnabled: config.execution.enabled,
+      dashboardEnabled: config.dashboard.enabled,
+    });
+
+    // Start Dashboard Server
+    await this.dashboard.start();
+    this.dashboard.updateStatus({
+      isRunning: false,
+      executionEnabled: config.execution.enabled,
+      executionReady: false,
     });
 
     // Verify Telegram connection
@@ -196,6 +271,7 @@ export class App {
       if (!executionReady) {
         logger.warn('Execution Engine failed to initialize, continuing without auto-trading');
       }
+      this.dashboard.updateStatus({ executionReady });
     } else {
       logger.info('Execution Engine is disabled (EXECUTION_ENABLED=false)');
     }
@@ -211,6 +287,7 @@ export class App {
     this.marketDataConsumer.start();
 
     this.isRunning = true;
+    this.dashboard.updateStatus({ isRunning: true });
 
     logger.info('Bot started successfully');
   }
@@ -224,12 +301,16 @@ export class App {
     logger.info('Stopping Binance Bollinger Notice Bot', { reason });
 
     this.isRunning = false;
+    this.dashboard.updateStatus({ isRunning: false });
 
     // Stop market data consumer
     this.marketDataConsumer.stop();
 
     // Send shutdown notification
     await this.notificationService.sendShutdownNotification(reason);
+
+    // Stop dashboard server
+    await this.dashboard.stop();
 
     logger.info('Bot stopped successfully');
   }
@@ -255,12 +336,14 @@ export class App {
     isConnected: boolean;
     bufferLength: number;
     execution: { ready: boolean; enabled: boolean };
+    dashboardClients: number;
   } {
     return {
       isRunning: this.isRunning,
       isConnected: this.marketDataConsumer.getConnectionStatus(),
       bufferLength: this.strategyEngine.getBufferLength(),
       execution: this.executionEngine.getStatus(),
+      dashboardClients: this.dashboard.getConnectionCount(),
     };
   }
 }
