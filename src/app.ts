@@ -14,6 +14,7 @@ import { StrategyEngine } from './strategy/index.js';
 import { NotificationService } from './notification/index.js';
 import { ExecutionEngine, BinanceOrderClient } from './execution/index.js';
 import { DashboardServer } from './dashboard/index.js';
+import { PositionManager } from './position/index.js';
 import type { KlineInterval } from './consumers/types.js';
 
 export class App {
@@ -21,7 +22,9 @@ export class App {
   private strategyEngine: StrategyEngine;
   private notificationService: NotificationService;
   private executionEngine: ExecutionEngine;
+  private positionManager: PositionManager;
   private dashboard: DashboardServer;
+  private binanceClient: BinanceOrderClient;
   private isRunning = false;
 
   constructor() {
@@ -49,13 +52,14 @@ export class App {
       retryDelayMs: 1000,
     });
 
-    // Initialize Execution Engine
-    const binanceClient = new BinanceOrderClient({
+    // Initialize Binance Client (shared)
+    this.binanceClient = new BinanceOrderClient({
       apiKey: config.binance.apiKey,
       apiSecret: config.binance.apiSecret,
       testnet: config.binance.testnet,
     });
 
+    // Initialize Execution Engine
     this.executionEngine = new ExecutionEngine(
       {
         enabled: config.execution.enabled,
@@ -70,7 +74,18 @@ export class App {
         retryAttempts: config.execution.retryAttempts,
         retryDelayMs: config.execution.retryDelayMs,
       },
-      binanceClient
+      this.binanceClient
+    );
+
+    // Initialize Position Manager
+    this.positionManager = new PositionManager(
+      {
+        enabled: config.position.enabled,
+        symbol: config.trading.symbol,
+        pollIntervalMs: config.position.pollIntervalMs,
+        testnet: config.binance.testnet,
+      },
+      this.binanceClient
     );
 
     // Initialize Dashboard Server
@@ -93,6 +108,7 @@ export class App {
     this.setupConnectionEvents();
     this.setupModuleEvents();
     this.setupDashboardEvents();
+    this.setupPositionEvents();
   }
 
   private setupDataFlowEvents(): void {
@@ -239,6 +255,46 @@ export class App {
     });
   }
 
+  private setupPositionEvents(): void {
+    // Position changes → Dashboard
+    this.positionManager.on('positionChanged', (change) => {
+      if (change.current) {
+        this.dashboard.updatePosition({
+          symbol: change.current.symbol,
+          side: change.current.side,
+          size: change.current.size,
+          entryPrice: change.current.entryPrice,
+          markPrice: change.current.markPrice,
+          unrealizedPnl: change.current.unrealizedPnl,
+          unrealizedPnlPercent: change.current.roe,
+          leverage: change.current.leverage,
+        });
+      } else {
+        this.dashboard.updatePosition(null);
+      }
+
+      logger.info('Position changed', {
+        type: change.changeType,
+        side: change.current?.side,
+        size: change.current?.size,
+      });
+    });
+
+    // Account updates → Dashboard
+    this.positionManager.on('accountUpdated', (account) => {
+      this.dashboard.updateAccount({
+        balance: account.totalBalance,
+        available: account.availableBalance,
+        totalPnl: account.totalUnrealizedPnl,
+      });
+    });
+
+    // Error handling
+    this.positionManager.on('error', (error) => {
+      logger.error('Position Manager error', { error: error.message });
+    });
+  }
+
   /**
    * Start the application
    */
@@ -286,6 +342,9 @@ export class App {
     // Start market data consumer
     this.marketDataConsumer.start();
 
+    // Start position manager
+    this.positionManager.start();
+
     this.isRunning = true;
     this.dashboard.updateStatus({ isRunning: true });
 
@@ -305,6 +364,9 @@ export class App {
 
     // Stop market data consumer
     this.marketDataConsumer.stop();
+
+    // Stop position manager
+    this.positionManager.stop();
 
     // Send shutdown notification
     await this.notificationService.sendShutdownNotification(reason);

@@ -113,6 +113,15 @@ export const config = {
     /** Dashboard server host */
     host: getEnvVar('DASHBOARD_HOST', '0.0.0.0'),
   },
+
+  // Position Manager Configuration
+  position: {
+    /** Enable position tracking */
+    enabled: getEnvBoolean('POSITION_TRACKING_ENABLED', true),
+
+    /** Position polling interval in milliseconds */
+    pollIntervalMs: getEnvNumber('POSITION_POLL_INTERVAL_MS', 5000),
+  },
 } as const;
 
 export type Config = typeof config;
