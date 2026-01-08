@@ -24,6 +24,6 @@ export type {
 
 // Classes
 export { BinanceOrderClient } from './BinanceOrderClient.js';
+export { PositionSizer } from './PositionSizer.js';
 // export { ExecutionEngine } from './ExecutionEngine.js';
-// export { PositionSizer } from './PositionSizer.js';
 // export { OrderValidator } from './OrderValidator.js';
