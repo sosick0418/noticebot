@@ -12,12 +12,14 @@ import { config } from './config.js';
 import { MarketDataConsumer } from './consumers/index.js';
 import { StrategyEngine } from './strategy/index.js';
 import { NotificationService } from './notification/index.js';
+import { ExecutionEngine, BinanceOrderClient } from './execution/index.js';
 import type { KlineInterval } from './consumers/types.js';
 
 export class App {
   private marketDataConsumer: MarketDataConsumer;
   private strategyEngine: StrategyEngine;
   private notificationService: NotificationService;
+  private executionEngine: ExecutionEngine;
   private isRunning = false;
 
   constructor() {
@@ -45,6 +47,30 @@ export class App {
       retryDelayMs: 1000,
     });
 
+    // Initialize Execution Engine
+    const binanceClient = new BinanceOrderClient({
+      apiKey: config.binance.apiKey,
+      apiSecret: config.binance.apiSecret,
+      testnet: config.binance.testnet,
+    });
+
+    this.executionEngine = new ExecutionEngine(
+      {
+        enabled: config.execution.enabled,
+        testnet: config.binance.testnet,
+        symbol: config.trading.symbol,
+        leverage: config.execution.leverage,
+        positionSizePercent: config.execution.positionSizePercent,
+        takeProfitPercent: config.execution.takeProfitPercent,
+        stopLossPercent: config.execution.stopLossPercent,
+        maxPositionSizeUsdt: config.execution.maxPositionSizeUsdt,
+        minPositionSizeUsdt: config.execution.minPositionSizeUsdt,
+        retryAttempts: config.execution.retryAttempts,
+        retryDelayMs: config.execution.retryDelayMs,
+      },
+      binanceClient
+    );
+
     this.setupEventPipeline();
   }
 
@@ -58,9 +84,13 @@ export class App {
       this.strategyEngine.processCandle(event);
     });
 
-    // Strategy Engine → Notification Service
+    // Strategy Engine → Notification Service + Execution Engine (parallel)
     this.strategyEngine.on('signalDetected', async (signal) => {
-      await this.notificationService.processSignal(signal);
+      // Execute notification and order in parallel
+      await Promise.all([
+        this.notificationService.processSignal(signal),
+        this.executionEngine.processSignal(signal),
+      ]);
     });
 
     // Error handling
@@ -75,6 +105,10 @@ export class App {
 
     this.notificationService.on('error', (error) => {
       logger.error('Notification Service error', { error: error.message });
+    });
+
+    this.executionEngine.on('error', (error) => {
+      logger.error('Execution Engine error', { error: error.message });
     });
 
     // Connection status logging
@@ -105,6 +139,28 @@ export class App {
         symbol: signal.symbol,
       });
     });
+
+    // Execution events
+    this.executionEngine.on('orderExecuted', (result) => {
+      logger.info('Order executed successfully', {
+        type: result.signal.type,
+        symbol: result.signal.symbol,
+        orderId: result.entryOrder.orderId,
+        price: result.entryOrder.avgPrice,
+      });
+    });
+
+    this.executionEngine.on('orderFailed', (signal, reason) => {
+      logger.warn('Order execution failed', {
+        type: signal.type,
+        symbol: signal.symbol,
+        reason,
+      });
+    });
+
+    this.executionEngine.on('leverageSet', (symbol, leverage) => {
+      logger.info('Leverage configured', { symbol, leverage });
+    });
   }
 
   /**
@@ -115,12 +171,23 @@ export class App {
       symbol: config.trading.symbol,
       interval: config.trading.interval,
       testnet: config.binance.testnet,
+      executionEnabled: config.execution.enabled,
     });
 
     // Verify Telegram connection
     const telegramOk = await this.notificationService.verifyConnection();
     if (!telegramOk) {
       throw new Error('Failed to verify Telegram connection');
+    }
+
+    // Initialize Execution Engine (if enabled)
+    if (config.execution.enabled) {
+      const executionReady = await this.executionEngine.initialize();
+      if (!executionReady) {
+        logger.warn('Execution Engine failed to initialize, continuing without auto-trading');
+      }
+    } else {
+      logger.info('Execution Engine is disabled (EXECUTION_ENABLED=false)');
     }
 
     // Send startup notification
@@ -177,11 +244,13 @@ export class App {
     isRunning: boolean;
     isConnected: boolean;
     bufferLength: number;
+    execution: { ready: boolean; enabled: boolean };
   } {
     return {
       isRunning: this.isRunning,
       isConnected: this.marketDataConsumer.getConnectionStatus(),
       bufferLength: this.strategyEngine.getBufferLength(),
+      execution: this.executionEngine.getStatus(),
     };
   }
 }
