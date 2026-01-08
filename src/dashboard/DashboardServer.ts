@@ -21,6 +21,7 @@ import type {
   AccountInfo,
   SignalInfo,
   SystemStatus,
+  RiskInfo,
   WsMessage,
 } from './types.js';
 
@@ -63,6 +64,7 @@ export class DashboardServer {
         uptime: 0,
         lastUpdate: Date.now(),
       },
+      risk: null,
     };
   }
 
@@ -347,6 +349,19 @@ export class DashboardServer {
         ...this.state.status,
         uptime: this.uptime,
       },
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Update risk information
+   */
+  updateRisk(risk: RiskInfo): void {
+    this.state.risk = risk;
+
+    this.broadcast({
+      type: 'risk',
+      data: risk,
       timestamp: Date.now(),
     });
   }

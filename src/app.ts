@@ -15,6 +15,7 @@ import { NotificationService } from './notification/index.js';
 import { ExecutionEngine, BinanceOrderClient } from './execution/index.js';
 import { DashboardServer } from './dashboard/index.js';
 import { PositionManager } from './position/index.js';
+import { RiskManager } from './risk/index.js';
 import type { KlineInterval } from './consumers/types.js';
 
 export class App {
@@ -23,6 +24,7 @@ export class App {
   private notificationService: NotificationService;
   private executionEngine: ExecutionEngine;
   private positionManager: PositionManager;
+  private riskManager: RiskManager;
   private dashboard: DashboardServer;
   private binanceClient: BinanceOrderClient;
   private isRunning = false;
@@ -88,6 +90,19 @@ export class App {
       this.binanceClient
     );
 
+    // Initialize Risk Manager
+    this.riskManager = new RiskManager(
+      {
+        enabled: config.risk.enabled,
+        symbol: config.trading.symbol,
+        dailyLossLimitUsdt: config.risk.dailyLossLimitUsdt,
+        maxDrawdownPercent: config.risk.maxDrawdownPercent,
+        autoCloseOnBreach: config.risk.autoCloseOnBreach,
+        checkIntervalMs: config.risk.checkIntervalMs,
+      },
+      this.binanceClient
+    );
+
     // Initialize Dashboard Server
     this.dashboard = new DashboardServer({
       enabled: config.dashboard.enabled,
@@ -109,6 +124,7 @@ export class App {
     this.setupModuleEvents();
     this.setupDashboardEvents();
     this.setupPositionEvents();
+    this.setupRiskEvents();
   }
 
   private setupDataFlowEvents(): void {
@@ -118,11 +134,23 @@ export class App {
     });
 
     // Strategy Engine → Notification Service + Execution Engine (parallel)
+    // Risk check gates execution but not notification
     this.strategyEngine.on('signalDetected', async (signal) => {
-      await Promise.all([
-        this.notificationService.processSignal(signal),
-        this.executionEngine.processSignal(signal),
-      ]);
+      // Always send notification
+      const notificationPromise = this.notificationService.processSignal(signal);
+
+      // Only execute if risk allows
+      let executionPromise: Promise<void> = Promise.resolve();
+      if (this.riskManager.isTradingAllowed()) {
+        executionPromise = this.executionEngine.processSignal(signal);
+      } else {
+        logger.warn('Signal execution blocked by risk manager', {
+          type: signal.type,
+          symbol: signal.symbol,
+        });
+      }
+
+      await Promise.all([notificationPromise, executionPromise]);
     });
   }
 
@@ -295,6 +323,52 @@ export class App {
     });
   }
 
+  private setupRiskEvents(): void {
+    // Risk breach → Notification + Dashboard
+    this.riskManager.on('riskBreach', async (breach) => {
+      logger.warn('Risk breach detected', {
+        type: breach.type,
+        currentValue: breach.currentValue,
+        threshold: breach.threshold,
+        autoCloseTriggered: breach.autoCloseTriggered,
+      });
+
+      // Send Telegram notification for risk breach
+      const breachMessage =
+        breach.type === 'daily_loss'
+          ? `Daily loss limit breached: -$${breach.currentValue.toFixed(2)} (limit: $${breach.threshold})`
+          : `Max drawdown breached: ${breach.currentValue.toFixed(2)}% (limit: ${breach.threshold}%)`;
+
+      await this.notificationService.sendErrorNotification('RiskManager', breachMessage);
+    });
+
+    // Trading blocked/resumed → Dashboard
+    this.riskManager.on('tradingBlocked', (reason) => {
+      logger.warn('Trading blocked by risk manager', { reason });
+      this.dashboard.updateStatus({ tradingBlocked: true, tradingBlockedReason: reason });
+    });
+
+    this.riskManager.on('tradingResumed', () => {
+      logger.info('Trading resumed by risk manager');
+      this.dashboard.updateStatus({ tradingBlocked: false, tradingBlockedReason: undefined });
+    });
+
+    // Risk status updates → Dashboard
+    this.riskManager.on('statusChanged', (status) => {
+      this.dashboard.updateRisk({
+        dailyPnl: status.dailyPnl,
+        dailyLossRemaining: status.dailyLossRemaining,
+        currentDrawdown: status.currentDrawdown,
+        isTradingAllowed: status.isTradingAllowed,
+      });
+    });
+
+    // Error handling
+    this.riskManager.on('error', (error) => {
+      logger.error('Risk Manager error', { error: error.message });
+    });
+  }
+
   /**
    * Start the application
    */
@@ -345,6 +419,9 @@ export class App {
     // Start position manager
     this.positionManager.start();
 
+    // Start risk manager
+    await this.riskManager.start();
+
     this.isRunning = true;
     this.dashboard.updateStatus({ isRunning: true });
 
@@ -367,6 +444,9 @@ export class App {
 
     // Stop position manager
     this.positionManager.stop();
+
+    // Stop risk manager
+    this.riskManager.stop();
 
     // Send shutdown notification
     await this.notificationService.sendShutdownNotification(reason);
