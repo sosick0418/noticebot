@@ -48,13 +48,9 @@ export class PositionSizer {
 
     // Step 3: Check against minimum position size
     if (notionalValue < this.config.minPositionSizeUsdt) {
-      return {
-        quantity: 0,
-        notionalValue: 0,
-        riskAmount: 0,
-        valid: false,
-        reason: `Notional value ${notionalValue.toFixed(2)} USDT is below minimum ${this.config.minPositionSizeUsdt} USDT`,
-      };
+      return this.createInvalidResult(
+        `Notional value ${notionalValue.toFixed(2)} USDT is below minimum ${this.config.minPositionSizeUsdt} USDT`
+      );
     }
 
     // Step 4: Calculate quantity
@@ -65,35 +61,23 @@ export class PositionSizer {
 
     // Step 6: Validate against symbol limits
     if (quantity < symbolInfo.minQty) {
-      return {
-        quantity: 0,
-        notionalValue: 0,
-        riskAmount: 0,
-        valid: false,
-        reason: `Quantity ${quantity} is below symbol minimum ${symbolInfo.minQty}`,
-      };
+      return this.createInvalidResult(
+        `Quantity ${quantity} is below symbol minimum ${symbolInfo.minQty}`
+      );
     }
 
     if (quantity > symbolInfo.maxQty) {
-      return {
-        quantity: 0,
-        notionalValue: 0,
-        riskAmount: 0,
-        valid: false,
-        reason: `Quantity ${quantity} exceeds symbol maximum ${symbolInfo.maxQty}`,
-      };
+      return this.createInvalidResult(
+        `Quantity ${quantity} exceeds symbol maximum ${symbolInfo.maxQty}`
+      );
     }
 
     // Step 7: Check notional value against symbol minimum
     const actualNotional = quantity * currentPrice;
     if (actualNotional < symbolInfo.minNotional) {
-      return {
-        quantity: 0,
-        notionalValue: 0,
-        riskAmount: 0,
-        valid: false,
-        reason: `Notional ${actualNotional.toFixed(2)} USDT is below symbol minimum ${symbolInfo.minNotional} USDT`,
-      };
+      return this.createInvalidResult(
+        `Notional ${actualNotional.toFixed(2)} USDT is below symbol minimum ${symbolInfo.minNotional} USDT`
+      );
     }
 
     return {
@@ -154,5 +138,18 @@ export class PositionSizer {
    */
   getConfig(): Readonly<ExecutionEngineConfig> {
     return this.config;
+  }
+
+  /**
+   * Create an invalid position size result
+   */
+  private createInvalidResult(reason: string): PositionSizeResult {
+    return {
+      quantity: 0,
+      notionalValue: 0,
+      riskAmount: 0,
+      valid: false,
+      reason,
+    };
   }
 }
