@@ -28,11 +28,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class DashboardServer {
+  private static readonly MAX_CANDLES = 500;
+  private static readonly MAX_BOLLINGER_BANDS = 500;
+  private static readonly MAX_SIGNALS = 100;
+
   private server: FastifyInstance;
   private config: DashboardConfig;
   private state: DashboardState;
   private clients: Set<WebSocket> = new Set();
   private startTime: number = Date.now();
+
+  private get uptime(): number {
+    return Date.now() - this.startTime;
+  }
 
   constructor(config: DashboardConfig) {
     this.config = config;
@@ -121,7 +129,7 @@ export class DashboardServer {
   private registerRoutes(): void {
     // Health check
     this.server.get('/api/health', async () => {
-      return { status: 'ok', uptime: Date.now() - this.startTime };
+      return { status: 'ok', uptime: this.uptime };
     });
 
     // Get current state
@@ -130,7 +138,7 @@ export class DashboardServer {
         ...this.state,
         status: {
           ...this.state.status,
-          uptime: Date.now() - this.startTime,
+          uptime: this.uptime,
         },
       };
     });
@@ -167,7 +175,7 @@ export class DashboardServer {
     this.server.get('/api/status', async () => {
       return {
         ...this.state.status,
-        uptime: Date.now() - this.startTime,
+        uptime: this.uptime,
       };
     });
   }
@@ -187,7 +195,7 @@ export class DashboardServer {
         type: 'status',
         data: {
           ...this.state.status,
-          uptime: Date.now() - this.startTime,
+          uptime: this.uptime,
         },
         timestamp: Date.now(),
       });
@@ -252,9 +260,9 @@ export class DashboardServer {
    */
   updateCandle(candle: CandleChartData): void {
     this.state.candles.push(candle);
-    // Keep last 500 candles in memory
-    if (this.state.candles.length > 500) {
-      this.state.candles = this.state.candles.slice(-500);
+    // Keep buffer at max capacity
+    if (this.state.candles.length > DashboardServer.MAX_CANDLES) {
+      this.state.candles = this.state.candles.slice(-DashboardServer.MAX_CANDLES);
     }
 
     this.broadcast({
@@ -269,8 +277,8 @@ export class DashboardServer {
    */
   updateBollingerBands(bands: BollingerBandsData): void {
     this.state.bollingerBands.push(bands);
-    if (this.state.bollingerBands.length > 500) {
-      this.state.bollingerBands = this.state.bollingerBands.slice(-500);
+    if (this.state.bollingerBands.length > DashboardServer.MAX_BOLLINGER_BANDS) {
+      this.state.bollingerBands = this.state.bollingerBands.slice(-DashboardServer.MAX_BOLLINGER_BANDS);
     }
 
     this.broadcast({
@@ -311,9 +319,9 @@ export class DashboardServer {
    */
   addSignal(signal: SignalInfo): void {
     this.state.signals.push(signal);
-    // Keep last 100 signals
-    if (this.state.signals.length > 100) {
-      this.state.signals = this.state.signals.slice(-100);
+    // Keep buffer at max capacity
+    if (this.state.signals.length > DashboardServer.MAX_SIGNALS) {
+      this.state.signals = this.state.signals.slice(-DashboardServer.MAX_SIGNALS);
     }
 
     this.broadcast({
@@ -337,7 +345,7 @@ export class DashboardServer {
       type: 'status',
       data: {
         ...this.state.status,
-        uptime: Date.now() - this.startTime,
+        uptime: this.uptime,
       },
       timestamp: Date.now(),
     });
