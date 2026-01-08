@@ -8,7 +8,7 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import { WebSocket } from 'ws';
+import WebSocket from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
