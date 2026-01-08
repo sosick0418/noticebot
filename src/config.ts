@@ -71,6 +71,36 @@ export const config = {
   watchdog: {
     timeoutSeconds: getEnvNumber('WATCHDOG_TIMEOUT', 60),
   },
+
+  // Execution Engine Configuration
+  execution: {
+    /** Kill switch - easily disable execution */
+    enabled: getEnvBoolean('EXECUTION_ENABLED', false),
+
+    /** Leverage setting (1-125) */
+    leverage: getEnvNumber('EXECUTION_LEVERAGE', 10),
+
+    /** Position size as % of available balance (0.1 = 10%) */
+    positionSizePercent: getEnvNumber('EXECUTION_POSITION_SIZE_PERCENT', 0.1),
+
+    /** Take profit % from entry (0.02 = 2%) */
+    takeProfitPercent: getEnvNumber('EXECUTION_TP_PERCENT', 0.02),
+
+    /** Stop loss % from entry (0.01 = 1%) */
+    stopLossPercent: getEnvNumber('EXECUTION_SL_PERCENT', 0.01),
+
+    /** Maximum position size in USDT */
+    maxPositionSizeUsdt: getEnvNumber('EXECUTION_MAX_SIZE_USDT', 1000),
+
+    /** Minimum position size in USDT */
+    minPositionSizeUsdt: getEnvNumber('EXECUTION_MIN_SIZE_USDT', 10),
+
+    /** Retry attempts for failed orders */
+    retryAttempts: getEnvNumber('EXECUTION_RETRY_ATTEMPTS', 3),
+
+    /** Delay between retries (ms) */
+    retryDelayMs: getEnvNumber('EXECUTION_RETRY_DELAY_MS', 1000),
+  },
 } as const;
 
 export type Config = typeof config;
