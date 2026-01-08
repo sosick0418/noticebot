@@ -133,9 +133,13 @@ export class BinanceOrderClient {
       }
 
       const positionAmt = parseFloat(String(position.positionAmt));
-      let side: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
-      if (positionAmt > 0) side = 'LONG';
-      else if (positionAmt < 0) side = 'SHORT';
+      const isLongPosition = positionAmt > 0;
+      const isShortPosition = positionAmt < 0;
+      const side: 'LONG' | 'SHORT' | 'NONE' = isLongPosition
+        ? 'LONG'
+        : isShortPosition
+          ? 'SHORT'
+          : 'NONE';
 
       return {
         symbol,
@@ -208,48 +212,26 @@ export class BinanceOrderClient {
    * Submit take profit order
    */
   async submitTakeProfitOrder(request: TpSlOrderRequest): Promise<OrderResult> {
-    try {
-      logger.info('Submitting take profit order', {
-        symbol: request.symbol,
-        side: request.side,
-        stopPrice: request.stopPrice,
-      });
-
-      const result = await this.client.submitNewOrder({
-        symbol: request.symbol,
-        side: request.side,
-        type: 'TAKE_PROFIT_MARKET',
-        stopPrice: request.stopPrice,
-        closePosition: request.closePosition ? 'true' : 'false',
-      });
-
-      return {
-        success: true,
-        orderId: result.orderId,
-        timestamp: Date.now(),
-      };
-    } catch (error) {
-      const errorMsg = this.normalizeError(error);
-      logger.error('Take profit order failed', {
-        symbol: request.symbol,
-        stopPrice: request.stopPrice,
-        error: errorMsg,
-      });
-
-      return {
-        success: false,
-        error: errorMsg,
-        timestamp: Date.now(),
-      };
-    }
+    return this.submitConditionalOrder(request, 'TAKE_PROFIT_MARKET', 'take profit');
   }
 
   /**
    * Submit stop loss order
    */
   async submitStopLossOrder(request: TpSlOrderRequest): Promise<OrderResult> {
+    return this.submitConditionalOrder(request, 'STOP_MARKET', 'stop loss');
+  }
+
+  /**
+   * Common logic for conditional orders (TP/SL)
+   */
+  private async submitConditionalOrder(
+    request: TpSlOrderRequest,
+    orderType: 'TAKE_PROFIT_MARKET' | 'STOP_MARKET',
+    orderName: string
+  ): Promise<OrderResult> {
     try {
-      logger.info('Submitting stop loss order', {
+      logger.info(`Submitting ${orderName} order`, {
         symbol: request.symbol,
         side: request.side,
         stopPrice: request.stopPrice,
@@ -258,7 +240,7 @@ export class BinanceOrderClient {
       const result = await this.client.submitNewOrder({
         symbol: request.symbol,
         side: request.side,
-        type: 'STOP_MARKET',
+        type: orderType,
         stopPrice: request.stopPrice,
         closePosition: request.closePosition ? 'true' : 'false',
       });
@@ -270,7 +252,7 @@ export class BinanceOrderClient {
       };
     } catch (error) {
       const errorMsg = this.normalizeError(error);
-      logger.error('Stop loss order failed', {
+      logger.error(`${orderName} order failed`, {
         symbol: request.symbol,
         stopPrice: request.stopPrice,
         error: errorMsg,
@@ -360,16 +342,17 @@ export class BinanceOrderClient {
     try {
       const prices = await this.client.getMarkPrice({ symbol });
 
-      // API returns array for multiple symbols, single object for one symbol
-      if (Array.isArray(prices)) {
-        const priceData = prices.find((p) => p.symbol === symbol);
-        if (!priceData) {
-          throw new Error(`Mark price not found for symbol: ${symbol}`);
-        }
-        return parseFloat(String(priceData.markPrice));
+      // Single symbol request returns object directly
+      if (!Array.isArray(prices)) {
+        return parseFloat(String(prices.markPrice));
       }
 
-      return parseFloat(String(prices.markPrice));
+      // Multiple symbols: find matching one
+      const priceData = prices.find((p) => p.symbol === symbol);
+      if (!priceData) {
+        throw new Error(`Mark price not found for symbol: ${symbol}`);
+      }
+      return parseFloat(String(priceData.markPrice));
     } catch (error) {
       logger.error('Failed to get mark price', {
         symbol,
