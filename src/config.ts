@@ -122,6 +122,24 @@ export const config = {
     /** Position polling interval in milliseconds */
     pollIntervalMs: getEnvNumber('POSITION_POLL_INTERVAL_MS', 5000),
   },
+
+  // Risk Manager Configuration
+  risk: {
+    /** Enable risk management */
+    enabled: getEnvBoolean('RISK_ENABLED', true),
+
+    /** Daily loss limit in USDT */
+    dailyLossLimitUsdt: getEnvNumber('RISK_DAILY_LOSS_LIMIT_USDT', 100),
+
+    /** Maximum drawdown percentage (0.1 = 10%) */
+    maxDrawdownPercent: getEnvNumber('RISK_MAX_DRAWDOWN_PERCENT', 0.1),
+
+    /** Auto-close positions when risk limit exceeded */
+    autoCloseOnBreach: getEnvBoolean('RISK_AUTO_CLOSE', true),
+
+    /** Risk check interval in milliseconds */
+    checkIntervalMs: getEnvNumber('RISK_CHECK_INTERVAL_MS', 10000),
+  },
 } as const;
 
 export type Config = typeof config;

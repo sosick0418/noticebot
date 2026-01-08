@@ -77,8 +77,20 @@ export interface SystemStatus {
   isConnected: boolean;
   executionEnabled: boolean;
   executionReady: boolean;
+  tradingBlocked?: boolean;
+  tradingBlockedReason?: string;
   uptime: number;
   lastUpdate: number;
+}
+
+/**
+ * Risk status information
+ */
+export interface RiskInfo {
+  dailyPnl: number;
+  dailyLossRemaining: number;
+  currentDrawdown: number;
+  isTradingAllowed: boolean;
 }
 
 /**
@@ -91,6 +103,7 @@ export interface DashboardState {
   account: AccountInfo | null;
   signals: SignalInfo[];
   status: SystemStatus;
+  risk: RiskInfo | null;
 }
 
 /**
@@ -102,7 +115,8 @@ export type WsMessageType =
   | 'signal'
   | 'status'
   | 'account'
-  | 'bollingerBands';
+  | 'bollingerBands'
+  | 'risk';
 
 /**
  * WebSocket message payload
