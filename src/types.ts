@@ -134,3 +134,10 @@ export type NotificationEvents = {
   skipped: [reason: string, signal: TradingSignal];
   error: [error: Error];
 };
+
+// ===========================================
+// Execution Engine Types
+// ===========================================
+
+// Re-export from execution module
+export type { ExecutionEvents, ExecutionResult } from './execution/types.js';
