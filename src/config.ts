@@ -101,6 +101,18 @@ export const config = {
     /** Delay between retries (ms) */
     retryDelayMs: getEnvNumber('EXECUTION_RETRY_DELAY_MS', 1000),
   },
+
+  // Dashboard Configuration
+  dashboard: {
+    /** Enable web dashboard */
+    enabled: getEnvBoolean('DASHBOARD_ENABLED', true),
+
+    /** Dashboard server port */
+    port: getEnvNumber('DASHBOARD_PORT', 3000),
+
+    /** Dashboard server host */
+    host: getEnvVar('DASHBOARD_HOST', '0.0.0.0'),
+  },
 } as const;
 
 export type Config = typeof config;

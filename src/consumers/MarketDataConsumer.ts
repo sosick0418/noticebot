@@ -44,12 +44,16 @@ export class MarketDataConsumer extends EventEmitter<MarketDataEventTypes> {
       testnet: this.config.testnet,
     });
 
-    const wsOptions: WSClientConfigurableOptions = {
+    // Note: testnet option exists at runtime but is missing from type definitions
+    const wsOptions = {
       beautify: true,
-    };
+      testnet: this.config.testnet,
+    } as WSClientConfigurableOptions & { testnet?: boolean };
 
-    // Note: testnet is handled via wsUrl configuration in newer versions
-    // For now, we use the default which connects to mainnet/testnet based on wsUrl
+    logger.info('Creating WebSocket client', {
+      testnet: this.config.testnet,
+    });
+
     this.wsClient = new WebsocketClient(wsOptions);
 
     this.attachEventHandlers();
@@ -88,7 +92,13 @@ export class MarketDataConsumer extends EventEmitter<MarketDataEventTypes> {
 
     // Handle formatted messages (beautified kline data)
     this.wsClient.on('formattedMessage', (data: unknown) => {
+      logger.debug('Received formattedMessage', { data });
       this.handleMessage(data);
+    });
+
+    // Also log raw messages for debugging
+    this.wsClient.on('message', (data: unknown) => {
+      logger.debug('Received raw message', { data });
     });
 
     // Connection opened
@@ -151,8 +161,15 @@ export class MarketDataConsumer extends EventEmitter<MarketDataEventTypes> {
     this.lastMessageTime = Date.now();
     this.resetWatchdog();
 
+    // The beautified data from binance library comes wrapped in a 'data' property
+    // Extract the actual message data
+    const messageData =
+      typeof data === 'object' && data !== null && 'data' in data
+        ? (data as { data: unknown }).data
+        : data;
+
     // Parse and validate kline data
-    const candle = this.parseKlineData(data);
+    const candle = this.parseKlineData(messageData);
     if (!candle) return;
 
     // Only process confirmed candles (x = true)
